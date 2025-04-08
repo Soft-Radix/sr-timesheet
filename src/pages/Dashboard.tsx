@@ -149,7 +149,7 @@ export const Dashboard = () => {
         <div className="max-w-2xl mx-auto px-4">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <h1 className="text-xl font-semibold text-gray-900">Timesheet Entry</h1>
+              <h1 className="text-xl font-semibold text-gray-900">Timesheet Report</h1>
             </div>
             <div className="flex items-center">
               <span className="text-sm text-gray-700 mr-4">{session?.user.email}</span>
