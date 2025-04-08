@@ -182,9 +182,9 @@ async function getOrCreateEmployeeSpreadsheet(userEmail) {
             values: [
               [
                 'Date',
-                'Hours',
                 'Project',
-                'Description'
+                'Task',
+                'Hours'
               ]
             ]
           }
@@ -240,9 +240,9 @@ Deno.serve(async (req)=>{
         values: [
           [
             date,
-            hours,
             project,
-            description
+            description,
+            hours
           ]
         ]
       }
