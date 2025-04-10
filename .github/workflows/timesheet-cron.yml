@@ -1,0 +1,16 @@
+name: Daily Timesheet Cron
+
+on:
+  schedule:
+    - cron: '30 17 * * *' # 11:00 PM IST (UTC+5:30)
+  workflow_dispatch:       # allows manual runs too
+
+jobs:
+  trigger-supabase:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call Supabase Function
+        run: |
+          curl -X POST https://wwbpmknyjbaovhngxokd.supabase.co/functions/v1/timesheet-monitor \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
