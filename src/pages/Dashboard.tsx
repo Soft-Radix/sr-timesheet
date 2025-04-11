@@ -126,6 +126,7 @@ export const Dashboard = () => {
           description: task.description,
           hours: task.hours,
           userEmail: session?.user.email,
+          userName: user?.user_metadata?.display_name || user?.email
         }))
       );
 
