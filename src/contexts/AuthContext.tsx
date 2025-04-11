@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   session: Session | null;
+  user: User | null;
   signIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateUserName: (name: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -16,11 +18,13 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setUser(session?.user ?? null);
       setLoading(false);
     });
 
@@ -28,22 +32,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email: string) => {
-    // Get the current hostname from the window location
     const currentHost = window.location.hostname;
-    
-    // Determine if we're in WebContainer environment
     const isWebContainer = currentHost.includes('webcontainer');
-    
-    // Use the appropriate redirect URL
     const redirectUrl = isWebContainer 
-      ? `https://${currentHost}`  // Use HTTPS for WebContainer
-      : window.location.origin;   // Use origin for localhost
+      ? `https://${currentHost}`
+      : window.location.origin;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -59,10 +59,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (error) throw error;
   };
 
+  const updateUserName = async (name: string) => {
+    const { error } = await supabase.auth.updateUser({
+      data: { display_name: name }
+    });
+    if (error) throw error;
+    
+    // Update local user state
+    if (user) {
+      setUser({
+        ...user,
+        user_metadata: { ...user.user_metadata, display_name: name }
+      });
+    }
+  };
+
   const value = {
     session,
+    user,
     signIn,
     signOut,
+    updateUserName,
   };
 
   if (loading) {
