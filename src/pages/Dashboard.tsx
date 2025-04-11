@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Plus, X, Check, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { LogOut, Plus, X, Check, Loader2, Trash2, AlertTriangle, Edit2 } from 'lucide-react';
 
 interface Task {
   description: string;
@@ -20,7 +20,7 @@ interface DeleteConfirmation {
 }
 
 export const Dashboard = () => {
-  const { signOut, session } = useAuth();
+  const { signOut, session, user, updateUserName } = useAuth();
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [projects, setProjects] = useState<Project[]>([
     { name: '', tasks: [{ description: '', hours: '' }] }
@@ -33,9 +33,22 @@ export const Dashboard = () => {
     projectIndex: 0,
     show: false
   });
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState(user?.user_metadata?.display_name || '');
 
-  // Get today's date in YYYY-MM-DD format for max date attribute
   const today = new Date().toISOString().split('T')[0];
+
+  const handleNameUpdate = async () => {
+    try {
+      await updateUserName(newName);
+      setIsEditingName(false);
+      setSuccessMessage('Name updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error: any) {
+      setError(error.message);
+      setTimeout(() => setError(''), 3000);
+    }
+  };
 
   const addProject = () => {
     setProjects([...projects, { name: '', tasks: [{ description: '', hours: '' }] }]);
@@ -152,10 +165,44 @@ export const Dashboard = () => {
               <h1 className="text-xl font-semibold text-gray-900">Timesheet Report</h1>
             </div>
             <div className="flex items-center">
-              <span className="text-sm text-gray-700 mr-4">{session?.user.email}</span>
+              {isEditingName ? (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    className="px-2 py-1 border rounded text-sm"
+                    placeholder="Enter your full name"
+                  />
+                  <button
+                    onClick={handleNameUpdate}
+                    className="text-green-600 hover:text-green-800"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingName(false)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center">
+                  <span className="text-sm text-gray-700 mr-2">
+                    {user?.user_metadata?.display_name || user?.email}
+                  </span>
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="p-1 text-gray-600 hover:text-gray-800"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => signOut()}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                className="ml-4 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign out
@@ -295,7 +342,6 @@ export const Dashboard = () => {
           </div>
         </form>
 
-        {/* Delete Confirmation Modal */}
         {deleteConfirmation.show && (
           <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg p-6 max-w-sm w-full">
