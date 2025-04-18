@@ -107,6 +107,12 @@ export const Dashboard = () => {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (projects.length === 0) {
@@ -130,12 +136,14 @@ export const Dashboard = () => {
         }))
       );
 
+      let isFirstTask = true;
       for (const entry of entries) {
         const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/timesheet`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
+            'X-First-Task': isFirstTask ? entry.project : ''
           },
           body: JSON.stringify(entry),
         });
@@ -143,6 +151,7 @@ export const Dashboard = () => {
         if (!response.ok) {
           throw new Error('Failed to save timesheet entry');
         }
+        isFirstTask = false;
       }
 
       setSuccessMessage('Timesheet entries saved successfully!');
@@ -288,6 +297,7 @@ export const Dashboard = () => {
                             max="24"
                             step="0.5"
                             value={task.hours}
+                            onKeyDown={handleKeyDown}
                             onChange={(e) => updateTask(projectIndex, taskIndex, 'hours', e.target.value)}
                             className={inputClasses}
                           />
