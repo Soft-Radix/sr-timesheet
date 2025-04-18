@@ -1,9 +1,12 @@
 import { google } from 'npm:googleapis@131.0.0';
 
+// Updated CORS headers with more comprehensive configuration
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Credentials': 'true'
 };
 
 const MONTHS = [
@@ -11,7 +14,7 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-// Initialize Google APIs
+// Initialize Google APIs with proper error handling
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: Deno.env.get('GOOGLE_CLIENT_EMAIL'),
@@ -46,13 +49,6 @@ async function sendSlackAlert(userEmail: string, userName: string, date: string)
             emoji: true
           }
         },
-        // {
-        //   type: 'section',
-        //   text: {
-        //     type: 'mrkdwn',
-        //     text: `*WARNING:* Past date timesheet submission detected!`
-        //   }
-        // },
         {
           type: 'section',
           text: {
@@ -93,83 +89,97 @@ async function findOrCreateSpreadsheet(userEmail: string): Promise<string> {
     throw new Error('GOOGLE_DRIVE_FOLDER_ID environment variable is not set');
   }
 
-  // Search for existing spreadsheet
-  const response = await drive.files.list({
-    q: `name = '${fileName}' and '${folderId}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet'`,
-    fields: 'files(id, name)',
-  });
+  try {
+    // Search for existing spreadsheet
+    const response = await drive.files.list({
+      q: `name = '${fileName}' and '${folderId}' in parents and mimeType = 'application/vnd.google-apps.spreadsheet'`,
+      fields: 'files(id, name)',
+    });
 
-  if (response.data.files && response.data.files.length > 0) {
-    return response.data.files[0].id;
-  }
+    if (response.data.files && response.data.files.length > 0) {
+      return response.data.files[0].id;
+    }
 
-  // Create new spreadsheet
-  const createResponse = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      mimeType: 'application/vnd.google-apps.spreadsheet',
-      parents: [folderId],
-    },
-    fields: 'id',
-  });
+    // Create new spreadsheet
+    const createResponse = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        mimeType: 'application/vnd.google-apps.spreadsheet',
+        parents: [folderId],
+      },
+      fields: 'id',
+    });
 
-  const spreadsheetId = createResponse.data.id;
+    const spreadsheetId = createResponse.data.id;
 
-  // Initialize sheets for each month
-  for (let i = 0; i < MONTHS.length; i++) {
-    if (i === 0) {
-      // Rename default sheet
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{
-            updateSheetProperties: {
-              properties: {
-                sheetId: 0,
-                title: MONTHS[0],
+    // Initialize sheets for each month
+    for (let i = 0; i < MONTHS.length; i++) {
+      if (i === 0) {
+        // Rename default sheet
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [{
+              updateSheetProperties: {
+                properties: {
+                  sheetId: 0,
+                  title: MONTHS[0],
+                },
+                fields: 'title',
               },
-              fields: 'title',
-            },
-          }],
-        },
-      });
-    } else {
-      // Add new sheet
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{
-            addSheet: {
-              properties: {
-                title: MONTHS[i],
+            }],
+          },
+        });
+      } else {
+        // Add new sheet
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [{
+              addSheet: {
+                properties: {
+                  title: MONTHS[i],
+                },
               },
-            },
-          }],
+            }],
+          },
+        });
+      }
+
+      // Add headers
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${MONTHS[i]}!A1:D1`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [['Date', 'Project', 'Task', 'Hours']],
         },
       });
     }
 
-    // Add headers
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${MONTHS[i]}!A1:D1`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [['Date', 'Project', 'Task', 'Hours']],
-      },
+    return spreadsheetId;
+  } catch (error) {
+    console.error('Error in findOrCreateSpreadsheet:', error);
+    throw new Error(`Failed to create or find spreadsheet: ${error.message}`);
+  }
+}
+
+// Main function handler with improved error handling and CORS
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders
     });
   }
 
-  return spreadsheetId;
-}
-
-Deno.serve(async (req) => {
-  // Handle CORS
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
   try {
+    // Validate request method
+    if (req.method !== 'POST') {
+      throw new Error(`Method ${req.method} not allowed`);
+    }
+
     const { date, hours, project, description, userEmail, userName } = await req.json();
 
     // Validate input
@@ -178,6 +188,14 @@ Deno.serve(async (req) => {
     }
 
     console.log('Processing timesheet entry:', { date, userEmail, userName });
+
+    // Validate environment variables
+    const requiredEnvVars = ['GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_DRIVE_FOLDER_ID'];
+    for (const envVar of requiredEnvVars) {
+      if (!Deno.env.get(envVar)) {
+        throw new Error(`Missing required environment variable: ${envVar}`);
+      }
+    }
 
     // Get current date in IST
     const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
@@ -197,11 +215,6 @@ Deno.serve(async (req) => {
       submittedDateIST: submittedDateIST.toISOString()
     });
 
-    if (submittedDateIST < currentDateIST) {
-      console.log('Past date detected, sending Slack alert');
-      await sendSlackAlert(userEmail, userName || userEmail, date);
-    }
-
     const spreadsheetId = await findOrCreateSpreadsheet(userEmail);
     const monthName = MONTHS[new Date(date).getMonth()];
 
@@ -215,9 +228,16 @@ Deno.serve(async (req) => {
       },
     });
 
+    // Send notification only for the first task in a past date submission
+    if (submittedDateIST < currentDateIST && project === req.headers.get('X-First-Task')) {
+      console.log('Past date detected, sending Slack alert');
+      await sendSlackAlert(userEmail, userName || userEmail, date);
+    }
+
     return new Response(
       JSON.stringify({ message: 'Timesheet entry saved successfully' }),
       {
+        status: 200,
         headers: {
           ...corsHeaders,
           'Content-Type': 'application/json',
@@ -225,7 +245,7 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error processing request:', error);
     
     return new Response(
       JSON.stringify({
@@ -233,7 +253,7 @@ Deno.serve(async (req) => {
         details: error.message,
       }),
       {
-        status: 500,
+        status: error.status || 500,
         headers: {
           ...corsHeaders,
           'Content-Type': 'application/json',
